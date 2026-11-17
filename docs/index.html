@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Friday Night Funkin' JavaScript Edition</title>
+  <meta name="description" content="Friday Night Funkin' JavaScript Edition: reconstrucción del juego en TypeScript con PixiJS y Web Audio, usando los assets de Bambi-Slice. Proyecto de fan, no oficial.">
+  <style>
+    :root {
+      --bg: #0e0d0f;
+      --panel: #171519;
+      --line: #2a262d;
+      --text: #f2eef5;
+      --muted: #a79fae;
+      --pink: #ff3fa4;
+      --cyan: #36d7f2;
+      --yellow: #ffd23f;
+      --btn: #efe9f2;
+      --btn-text: #151318;
+    }
+    @media (prefers-color-scheme: light) {
+      :root:not([data-theme="dark"]) {
+        --bg: #f7f4f9;
+        --panel: #ffffff;
+        --line: #e2dbe6;
+        --text: #1d1a20;
+        --muted: #5d5566;
+        --btn: #1d1a20;
+        --btn-text: #f7f4f9;
+      }
+    }
+    :root[data-theme="dark"] {
+      --bg: #0e0d0f;
+      --panel: #171519;
+      --line: #2a262d;
+      --text: #f2eef5;
+      --muted: #a79fae;
+      --btn: #efe9f2;
+      --btn-text: #151318;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      line-height: 1.55;
+    }
+    a { color: var(--cyan); }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 0 16px; }
+    header.top { border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); z-index: 2; }
+    header.top .wrap { display: flex; align-items: center; justify-content: space-between; height: 60px; gap: 12px; }
+    .brand { font-weight: 700; }
+    .brand b { color: var(--pink); }
+    nav a { color: var(--muted); text-decoration: none; margin-left: 16px; font-size: 15px; }
+    nav a:hover { color: var(--text); }
+    .btn {
+      display: inline-block; padding: 10px 18px; border-radius: 8px;
+      background: var(--btn); color: var(--btn-text);
+      text-decoration: none; font-weight: 600;
+    }
+    .btn.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); }
+    .hero { text-align: center; padding: 64px 0 36px; }
+    .hero h1 { font-size: clamp(36px, 6vw, 60px); margin: 8px 0; letter-spacing: -.02em; line-height: 1.05; }
+    .hero h1 .pink { color: var(--pink); }
+    .hero h1 .cyan { color: var(--cyan); }
+    .tagline { color: var(--muted); font-size: clamp(17px, 2.4vw, 20px); max-width: 680px; margin: 0 auto; }
+    .cta { margin-top: 28px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+    .status {
+      display: inline-block; margin-top: 18px; font-size: 14px; color: var(--muted);
+      border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px;
+    }
+    section { padding: 40px 0; border-top: 1px solid var(--line); }
+    section h2 { font-size: 28px; margin: 0 0 16px; }
+    .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px; }
+    .card h3 { margin: 0 0 6px; font-size: 17px; }
+    .card p { margin: 0; color: var(--muted); font-size: 15px; }
+    .tag {
+      display: inline-block; font-size: 12px; font-weight: 700;
+      padding: 2px 8px; border-radius: 6px; margin-bottom: 8px;
+      background: var(--line); color: var(--text);
+    }
+    .tag.done { background: var(--cyan); color: #0b1d22; }
+    .tag.wip { background: var(--yellow); color: #2a2100; }
+    .credits, .notice { color: var(--muted); font-size: 15px; }
+    .notice { border-left: 3px solid var(--pink); padding: 4px 14px; }
+    footer { border-top: 1px solid var(--line); padding: 28px 0 40px; color: var(--muted); font-size: 14px; }
+    @media (max-width: 600px) {
+      nav a { margin-left: 10px; font-size: 14px; }
+      .hero { padding: 40px 0 24px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <div class="brand">Friday Night <b>Funkin'</b> JS</div>
+      <nav>
+        <a href="#caracteristicas">Características</a>
+        <a href="#progreso">Progreso</a>
+        <a href="#creditos">Créditos</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="hero">
+      <h1><span class="pink">Friday Night Funkin'</span><br><span class="cyan">JavaScript Edition</span></h1>
+      <p class="tagline">Una reconstrucción de Friday Night Funkin' en TypeScript, con PixiJS para el render y Web Audio para el sonido. Usa los assets de Bambi-Slice.</p>
+      <div class="status">Estado: prototipo temprano</div>
+      <div class="cta">
+        <a class="btn" href="#progreso">Ver progreso</a>
+        <a class="btn ghost" href="https://github.com/darnellpsych-funkin/bambi-slice-engine">Bambi-Slice Engine</a>
+      </div>
+    </div>
+
+    <section id="caracteristicas">
+      <h2>Características</h2>
+      <div class="grid">
+        <div class="card">
+          <span class="tag done">Listo</span>
+          <h3>Personaje animado</h3>
+          <p>Boyfriend carga desde el atlas Sparrow de Bambi-Slice y responde a las flechas con sus animaciones de canto.</p>
+        </div>
+        <div class="card">
+          <span class="tag done">Listo</span>
+          <h3>Reloj de canción</h3>
+          <p>La posición de la canción se mide con el reloj del audio, no con el tiempo de frame, para mantener la sincronía.</p>
+        </div>
+        <div class="card">
+          <span class="tag wip">En progreso</span>
+          <h3>Notas y charts</h3>
+          <p>Lectura de charts y notas que caen, con medición del acierto contra el reloj de audio.</p>
+        </div>
+        <div class="card">
+          <span class="tag wip">En progreso</span>
+          <h3>Menús y opciones</h3>
+          <p>Menú principal, opciones y preferencias en el mismo estilo que el juego original.</p>
+        </div>
+        <div class="card">
+          <span class="tag">Planeado</span>
+          <h3>Compatibilidad con mods</h3>
+          <p>Cargar personajes, canciones y scripts de los mods existentes de Bambi-Slice.</p>
+        </div>
+        <div class="card">
+          <span class="tag">Planeado</span>
+          <h3>Versión de escritorio</h3>
+          <p>Empaquetado con Electron o Tauri para correr sin navegador.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="progreso">
+      <h2>Progreso</h2>
+      <p class="credits">El proyecto va por la fase 1: una canción jugable con notas, timing, un personaje animado y score básico. Después vienen menús, cámara y eventos, y por último la compatibilidad con mods.</p>
+    </section>
+
+    <section id="creditos">
+      <h2>Créditos y aviso</h2>
+      <p class="notice">Friday Night Funkin' JavaScript Edition es un proyecto de fan y no es oficial. Friday Night Funkin' pertenece a The Funkin' Crew. Los assets de personajes provienen de Bambi-Slice y conservan sus licencias originales.</p>
+      <p class="credits">Motor base: <a href="https://github.com/darnellpsych-funkin/bambi-slice-engine">Bambi-Slice Engine</a>, fork de LuaSlice (V-Slice 0.8.7).</p>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">Friday Night Funkin' JavaScript Edition · Proyecto de fan</div>
+  </footer>
+</body>
+</html>
