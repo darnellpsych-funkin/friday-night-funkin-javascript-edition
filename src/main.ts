@@ -1,6 +1,7 @@
 import { Application, Container, Text } from 'pixi.js';
 import { Character } from './character';
 import { Gameplay } from './gameplay';
+import { Alphabet } from './alphabet';
 import { PauseMenu } from './pause';
 import { loadAudio, loadChart } from './song';
 
@@ -93,6 +94,16 @@ async function boot(): Promise<void> {
     loadAudio(audio, `${SONG_PATH}/Inst.ogg`),
     loadAudio(audio, `${SONG_PATH}/Voices-bf.ogg`),
   ]);
+  const alphabet = await Alphabet.load('/ui');
+  const metadata = (await (await fetch(`${SONG_PATH}/bopeebo-metadata.json`)).json()) as {
+    songName?: string;
+    artist?: string;
+  };
+  const songInfo = {
+    song: metadata.songName ?? 'Bopeebo',
+    artist: metadata.artist ?? '',
+    difficulty: 'Normal',
+  };
 
   let scheme = loadScheme();
   let offset = loadOffset();
@@ -176,7 +187,7 @@ async function boot(): Promise<void> {
   const openPause = (): void => {
     if (!gameplay || gameplay.finished || gameplay.isPaused) return;
     gameplay.pause();
-    pauseMenu = new PauseMenu(app.screen.width, app.screen.height);
+    pauseMenu = new PauseMenu(app.screen.width, app.screen.height, alphabet, songInfo);
     app.stage.addChild(pauseMenu);
   };
 

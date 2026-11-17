@@ -1,31 +1,45 @@
 import { Container, Graphics, Text } from 'pixi.js';
+import type { Alphabet } from './alphabet';
 
 // Same options as the original game's pause screen.
-const ITEMS = ['Reanudar', 'Reiniciar canción', 'Salir a la pantalla principal'];
+// Uppercase glyphs are the bold style used by the original menus.
+const ITEMS = ['REANUDAR', 'REINICIAR CANCION', 'SALIR AL MENU'];
 
-/** Pause overlay: a dark shade with three options chosen with ↑/↓ and Enter. */
+export interface SongInfo {
+  song: string;
+  artist: string;
+  difficulty: string;
+}
+
+/** Pause overlay: dimmed game, song info top-right, and bold options. */
 export class PauseMenu extends Container {
-  private texts: Text[] = [];
+  private items: Container[] = [];
   private selected = 0;
 
-  constructor(width: number, height: number) {
+  constructor(width: number, height: number, alphabet: Alphabet, info: SongInfo) {
     super();
-    this.addChild(new Graphics().rect(0, 0, width, height).fill({ color: 0x000000, alpha: 0.7 }));
+    this.addChild(new Graphics().rect(0, 0, width, height).fill({ color: 0x000000, alpha: 0.6 }));
 
-    const title = new Text({
-      text: 'PAUSA',
-      style: { fill: 0xffffff, fontSize: 64, fontFamily: 'sans-serif', fontWeight: 'bold' },
+    const details = new Text({
+      text: `${info.song}\nArtist: ${info.artist}\nDifficulty: ${info.difficulty}`,
+      style: {
+        fill: 0xffffff,
+        fontSize: 26,
+        fontFamily: 'monospace',
+        fontWeight: 'bold',
+        align: 'right',
+        stroke: { color: 0x000000, width: 4 },
+      },
     });
-    title.anchor.set(0.5);
-    title.position.set(width / 2, height * 0.3);
-    this.addChild(title);
+    details.anchor.set(1, 0);
+    details.position.set(width - 24, 20);
+    this.addChild(details);
 
-    ITEMS.forEach((_, i) => {
-      const text = new Text({ text: '', style: { fill: 0xffffff, fontSize: 40, fontFamily: 'sans-serif' } });
-      text.anchor.set(0.5);
-      text.position.set(width / 2, height * 0.5 + i * 64);
-      this.texts.push(text);
-      this.addChild(text);
+    ITEMS.forEach((label, i) => {
+      const line = alphabet.text(label, 0.9);
+      line.position.set(width / 2 - line.width / 2, height * 0.4 + i * 110);
+      this.items.push(line);
+      this.addChild(line);
     });
     this.refresh();
   }
@@ -41,10 +55,8 @@ export class PauseMenu extends Container {
   }
 
   private refresh(): void {
-    this.texts.forEach((text, i) => {
-      const on = i === this.selected;
-      text.text = on ? `> ${ITEMS[i]} <` : ITEMS[i];
-      text.style.fill = on ? 0xffd23f : 0xa79fae;
+    this.items.forEach((line, i) => {
+      line.alpha = i === this.selected ? 1 : 0.5;
     });
   }
 }

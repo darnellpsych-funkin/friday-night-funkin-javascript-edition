@@ -16,6 +16,7 @@ export interface SparrowAtlas {
 
 export function parseSparrow(xml: string): SparrowAtlas {
   const doc = new DOMParser().parseFromString(xml, 'text/xml');
+  if (doc.querySelector('parsererror')) throw new Error('Invalid Sparrow atlas: XML parse error');
   const root = doc.querySelector('TextureAtlas');
   if (!root) throw new Error('Invalid Sparrow atlas: missing TextureAtlas root');
 
