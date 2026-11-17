@@ -13,6 +13,26 @@ const SCHEMES: Array<{ name: string; keys: string[] }> = [
   { name: 'Flechas + ASKL', keys: ['a', 's', 'k', 'l'] },
 ];
 const SCHEME_KEY = 'bambi-js-scheme';
+const OFFSET_KEY = 'bambi-js-offset';
+const OFFSET_STEP = 10; // ms per [ or ] press
+const OFFSET_LIMIT = 300; // ms, either direction
+
+function loadOffset(): number {
+  try {
+    const value = Number(localStorage.getItem(OFFSET_KEY));
+    return Number.isFinite(value) ? Math.max(-OFFSET_LIMIT, Math.min(OFFSET_LIMIT, value)) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function saveOffset(value: number): void {
+  try {
+    localStorage.setItem(OFFSET_KEY, String(value));
+  } catch {
+    // Ignore: the setting just won't persist.
+  }
+}
 
 function loadScheme(): number {
   try {
@@ -74,10 +94,12 @@ async function boot(): Promise<void> {
   ]);
 
   let scheme = loadScheme();
+  let offset = loadOffset();
   const schemeLabel = (): string =>
     `Teclas: ${SCHEMES[scheme].name} (Tab para cambiar)`;
+  const offsetLabel = (): string => `Ajuste de audio: ${offset} ms ([ y ] para cambiar)`;
   const updateStatus = (): void => {
-    status.text = `Bopeebo (normal): ${notes.length} notas · ${schemeLabel()} · clic para empezar`;
+    status.text = `Bopeebo (normal): ${notes.length} notas · ${schemeLabel()} · ${offsetLabel()} · clic para empezar`;
   };
   updateStatus();
 
@@ -111,12 +133,20 @@ async function boot(): Promise<void> {
   const start = async (): Promise<void> => {
     if (gameplay) return;
     await audio.resume();
-    gameplay = new Gameplay(audio, notes, speed, inst, voices, (lane) => {
-      bf.play(SING_ANIMS[lane]);
-    });
+    gameplay = new Gameplay(
+      audio,
+      notes,
+      speed,
+      inst,
+      voices,
+      (lane) => {
+        bf.play(SING_ANIMS[lane]);
+      },
+      offset,
+    );
     app.stage.addChild(gameplay);
     gameplay.start();
-    status.text = `Reproduciendo · ${schemeLabel()}`;
+    status.text = `Reproduciendo · ${schemeLabel()} · ${offsetLabel()}`;
   };
 
   const restart = (): void => {
@@ -153,6 +183,14 @@ async function boot(): Promise<void> {
       return;
     }
     if (e.repeat) return;
+    if (!gameplay && (e.key === '[' || e.key === ']')) {
+      // Audio offset, adjusted only before the song starts.
+      const delta = e.key === ']' ? OFFSET_STEP : -OFFSET_STEP;
+      offset = Math.max(-OFFSET_LIMIT, Math.min(OFFSET_LIMIT, offset + delta));
+      saveOffset(offset);
+      updateStatus();
+      return;
+    }
     if (e.key === 'Enter' && gameplay?.finished) {
       restart();
       return;

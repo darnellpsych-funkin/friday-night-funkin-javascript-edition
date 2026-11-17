@@ -62,13 +62,14 @@ export class Gameplay extends Container {
     inst: AudioBuffer,
     voices: AudioBuffer,
     onNote: (lane: number) => void,
+    offsetMs = 0,
   ) {
     super();
     this.ctx = ctx;
     this.inst = inst;
     this.voices = voices;
     this.onNote = onNote;
-    this.clock = new SongClock(ctx);
+    this.clock = new SongClock(ctx, offsetMs);
     this.pxPerMs = PX_PER_MS_BASE * speed;
     this.totalNotes = notes.length;
 
