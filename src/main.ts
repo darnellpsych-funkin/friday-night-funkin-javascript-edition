@@ -1,6 +1,7 @@
 import { Application, Container, Text } from 'pixi.js';
 import { Character } from './character';
 import { Gameplay } from './gameplay';
+import { PauseMenu } from './pause';
 import { loadAudio, loadChart } from './song';
 
 // Player lanes: 0 left, 1 down, 2 up, 3 right. Arrows always work; the
@@ -106,6 +107,7 @@ async function boot(): Promise<void> {
   let gameplay: Gameplay | null = null;
   let results: Container | null = null;
   let resultsShown = false;
+  let pauseMenu: PauseMenu | null = null;
 
   const showResults = (g: Gameplay): void => {
     const s = g.stats;
@@ -164,12 +166,64 @@ async function boot(): Promise<void> {
     void start();
   };
 
+  const removePauseMenu = (): void => {
+    if (!pauseMenu) return;
+    app.stage.removeChild(pauseMenu);
+    pauseMenu.destroy({ children: true });
+    pauseMenu = null;
+  };
+
+  const openPause = (): void => {
+    if (!gameplay || gameplay.finished || gameplay.isPaused) return;
+    gameplay.pause();
+    pauseMenu = new PauseMenu(app.screen.width, app.screen.height);
+    app.stage.addChild(pauseMenu);
+  };
+
+  const closePause = (): void => {
+    gameplay?.resume();
+    removePauseMenu();
+  };
+
+  const exitToTitle = (): void => {
+    if (!gameplay) return;
+    gameplay.stopSong();
+    app.stage.removeChild(gameplay);
+    gameplay.destroy({ children: true });
+    gameplay = null;
+    resultsShown = false;
+    if (results) {
+      app.stage.removeChild(results);
+      results.destroy({ children: true });
+      results = null;
+    }
+    updateStatus();
+  };
+
+  // Runs the option highlighted in the pause menu.
+  const activatePause = (): void => {
+    if (!pauseMenu) return;
+    const choice = pauseMenu.current;
+    if (choice === 0) {
+      closePause();
+    } else if (choice === 1) {
+      removePauseMenu();
+      restart();
+    } else {
+      removePauseMenu();
+      exitToTitle();
+    }
+  };
+
   const onPrimary = (): void => {
     if (gameplay?.finished) restart();
     else void start();
   };
 
-  window.addEventListener('pointerdown', onPrimary);
+  window.addEventListener('pointerdown', () => {
+    if (pauseMenu) activatePause();
+    else onPrimary();
+  });
 
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Tab') {
@@ -183,6 +237,17 @@ async function boot(): Promise<void> {
       return;
     }
     if (e.repeat) return;
+    if (gameplay?.isPaused) {
+      if (e.key === 'ArrowUp') pauseMenu?.move(-1);
+      else if (e.key === 'ArrowDown') pauseMenu?.move(1);
+      else if (e.key === 'Enter') activatePause();
+      else if (e.key === 'Escape') closePause();
+      return;
+    }
+    if (gameplay && !gameplay.finished && (e.key === 'Enter' || e.key === 'Escape')) {
+      openPause();
+      return;
+    }
     if (!gameplay && (e.key === '[' || e.key === ']')) {
       // Audio offset, adjusted only before the song starts.
       const delta = e.key === ']' ? OFFSET_STEP : -OFFSET_STEP;
@@ -210,7 +275,7 @@ async function boot(): Promise<void> {
   });
 
   app.ticker.add(() => {
-    if (!gameplay) return;
+    if (!gameplay || gameplay.isPaused) return;
     gameplay.update();
     if (gameplay.finished && !resultsShown) {
       resultsShown = true;

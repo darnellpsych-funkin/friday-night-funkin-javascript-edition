@@ -52,6 +52,9 @@ export class Gameplay extends Container {
   private weightSum = 0;
   private counts: Record<Rating, number> = { Sick: 0, Good: 0, Bad: 0, Shit: 0, Fallo: 0 };
   private running = false;
+  private paused = false;
+  private pausedElapsed = 0;
+  private pausedPosition = 0;
   private onNote: (lane: number) => void;
   private totalNotes: number;
 
@@ -101,19 +104,57 @@ export class Gameplay extends Container {
   /** Starts the song audio and the chart clock at the same AudioContext time. */
   start(): void {
     const at = this.ctx.currentTime + 0.05;
-    for (const buffer of [this.inst, this.voices]) {
-      const source = this.ctx.createBufferSource();
-      source.buffer = buffer;
-      source.connect(this.ctx.destination);
-      source.start(at);
-      this.sources.push(source);
-    }
+    this.startSources(at, 0);
     this.clock.start(at);
     this.running = true;
   }
 
-  /** Stops the audio and freezes the chart. */
+  /** Freezes the song: stops the audio and holds the chart position. */
+  pause(): void {
+    if (!this.running || this.paused) return;
+    this.pausedElapsed = this.clock.elapsedMs();
+    this.pausedPosition = this.clock.positionMs();
+    this.paused = true;
+    this.stopAudio();
+  }
+
+  /** Continues from the paused point, restarting the audio at the same place. */
+  resume(): void {
+    if (!this.paused) return;
+    const at = this.ctx.currentTime + 0.05;
+    const offsetSec = Math.max(0, this.pausedElapsed / 1000);
+    this.startSources(at, offsetSec);
+    this.clock.start(at - this.pausedElapsed / 1000);
+    this.paused = false;
+  }
+
+  get isPaused(): boolean {
+    return this.paused;
+  }
+
+  /** Stops the audio and ends the song. */
   stopSong(): void {
+    this.stopAudio();
+    this.running = false;
+    this.paused = false;
+  }
+
+  get positionMs(): number {
+    return this.paused ? this.pausedPosition : this.clock.positionMs();
+  }
+
+  private startSources(at: number, offsetSec: number): void {
+    this.sources = [];
+    for (const buffer of [this.inst, this.voices]) {
+      const source = this.ctx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(this.ctx.destination);
+      source.start(at, offsetSec);
+      this.sources.push(source);
+    }
+  }
+
+  private stopAudio(): void {
     for (const s of this.sources) {
       try {
         s.stop();
@@ -122,11 +163,6 @@ export class Gameplay extends Container {
       }
     }
     this.sources = [];
-    this.running = false;
-  }
-
-  get positionMs(): number {
-    return this.clock.positionMs();
   }
 
   /** True when every note has been hit, missed or finished. */
@@ -145,7 +181,7 @@ export class Gameplay extends Container {
 
   /** Handles a press on a player lane (0-3). */
   press(lane: number): void {
-    if (!this.running) return;
+    if (!this.running || this.paused) return;
     const pos = this.positionMs;
 
     // Closest unjudged note in this lane inside the window.
@@ -174,7 +210,7 @@ export class Gameplay extends Container {
 
   /** Handles a release on a lane (0-3); breaks holds released too early. */
   release(lane: number): void {
-    if (!this.running) return;
+    if (!this.running || this.paused) return;
     const pos = this.positionMs;
     for (const entry of this.lanes) {
       if (!entry.holding || entry.lane !== lane) continue;
@@ -189,7 +225,7 @@ export class Gameplay extends Container {
   }
 
   update(): void {
-    if (!this.running) return;
+    if (!this.running || this.paused) return;
     const pos = this.positionMs;
 
     for (const entry of this.lanes) {

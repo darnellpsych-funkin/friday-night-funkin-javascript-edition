@@ -14,8 +14,13 @@ export class SongClock {
     this.startTime = at;
   }
 
+  /** Milliseconds since the audio started, without the user offset. */
+  elapsedMs(): number {
+    return (this.ctx.currentTime - this.startTime) * 1000;
+  }
+
   /** Current song position in milliseconds, including the user offset. */
   positionMs(): number {
-    return (this.ctx.currentTime - this.startTime) * 1000 - this.offsetMs;
+    return this.elapsedMs() - this.offsetMs;
   }
 }
