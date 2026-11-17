@@ -3,13 +3,41 @@ import { Character } from './character';
 import { Gameplay } from './gameplay';
 import { loadAudio, loadChart } from './song';
 
-// Arrow keys mapped to player lanes (0 left, 1 down, 2 up, 3 right).
-const KEY_TO_LANE: Record<string, number> = {
-  ArrowLeft: 0,
-  ArrowDown: 1,
-  ArrowUp: 2,
-  ArrowRight: 3,
-};
+// Player lanes: 0 left, 1 down, 2 up, 3 right. Arrows always work; the
+// extra keys for each scheme are added on top. Letters are lowercased.
+const ARROWS = ['ArrowLeft', 'ArrowDown', 'ArrowUp', 'ArrowRight'];
+const SCHEMES: Array<{ name: string; keys: string[] }> = [
+  { name: 'Solo flechas', keys: [] },
+  { name: 'Flechas + WASD', keys: ['a', 's', 'w', 'd'] },
+  { name: 'Flechas + DFJK', keys: ['d', 'f', 'j', 'k'] },
+  { name: 'Flechas + ASKL', keys: ['a', 's', 'k', 'l'] },
+];
+const SCHEME_KEY = 'bambi-js-scheme';
+
+function loadScheme(): number {
+  try {
+    const value = Number(localStorage.getItem(SCHEME_KEY));
+    return Number.isInteger(value) && value >= 0 && value < SCHEMES.length ? value : 0;
+  } catch {
+    return 0; // Storage can be blocked (private windows).
+  }
+}
+
+function saveScheme(index: number): void {
+  try {
+    localStorage.setItem(SCHEME_KEY, String(index));
+  } catch {
+    // Ignore: the choice just won't persist.
+  }
+}
+
+function laneFor(key: string, scheme: number): number | undefined {
+  const normalized = key.length === 1 ? key.toLowerCase() : key;
+  const arrow = ARROWS.indexOf(normalized);
+  if (arrow >= 0) return arrow;
+  const extra = SCHEMES[scheme].keys.indexOf(normalized);
+  return extra >= 0 ? extra : undefined;
+}
 
 const SING_ANIMS = ['singLEFT', 'singDOWN', 'singUP', 'singRIGHT'];
 const SONG_PATH = '/songs/bopeebo';
@@ -45,7 +73,13 @@ async function boot(): Promise<void> {
     loadAudio(audio, `${SONG_PATH}/Voices-bf.ogg`),
   ]);
 
-  status.text = `Bopeebo (normal): ${notes.length} notas · haz clic para empezar`;
+  let scheme = loadScheme();
+  const schemeLabel = (): string =>
+    `Teclas: ${SCHEMES[scheme].name} (Tab para cambiar)`;
+  const updateStatus = (): void => {
+    status.text = `Bopeebo (normal): ${notes.length} notas · ${schemeLabel()} · clic para empezar`;
+  };
+  updateStatus();
 
   let gameplay: Gameplay | null = null;
   let results: Container | null = null;
@@ -82,7 +116,7 @@ async function boot(): Promise<void> {
     });
     app.stage.addChild(gameplay);
     gameplay.start();
-    status.text = 'Reproduciendo';
+    status.text = `Reproduciendo · ${schemeLabel()}`;
   };
 
   const restart = (): void => {
@@ -108,12 +142,22 @@ async function boot(): Promise<void> {
   window.addEventListener('pointerdown', onPrimary);
 
   window.addEventListener('keydown', (e) => {
+    if (e.key === 'Tab') {
+      // Cycle schemes only before the song starts, so the keys don't change mid-song.
+      e.preventDefault();
+      if (!gameplay) {
+        scheme = (scheme + 1) % SCHEMES.length;
+        saveScheme(scheme);
+        updateStatus();
+      }
+      return;
+    }
     if (e.repeat) return;
     if (e.key === 'Enter' && gameplay?.finished) {
       restart();
       return;
     }
-    const lane = KEY_TO_LANE[e.key];
+    const lane = laneFor(e.key, scheme);
     if (lane === undefined) return;
     if (!gameplay) {
       void start();
@@ -123,7 +167,7 @@ async function boot(): Promise<void> {
   });
 
   window.addEventListener('keyup', (e) => {
-    const lane = KEY_TO_LANE[e.key];
+    const lane = laneFor(e.key, scheme);
     if (lane !== undefined) gameplay?.release(lane);
   });
 
