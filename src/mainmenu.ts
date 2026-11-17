@@ -46,7 +46,7 @@ export class MainMenu extends Container {
     }
 
     const version = new Text({
-      text: 'v0.5.1 (develop : e66290c) PROTOTYPE',
+      text: 'JavaScript Edition',
       style: { fill: 0xffffff, fontSize: 18, fontFamily: 'monospace', stroke: { color: 0x000000, width: 3 } },
     });
     version.position.set(12, height - 32);
