@@ -2,17 +2,38 @@ import { Container, Graphics, Text } from 'pixi.js';
 import { SongClock } from './clock';
 import { playerLane, type ChartNote } from './song';
 
-// Judgement window in ms, and visual layout.
-const HIT_WINDOW_MS = 166;
+// Judgement windows in ms (the widest one is the hit window).
+const WINDOW_MS = 166;
+const RATINGS = [
+  { name: 'Sick', maxMs: 45, points: 350, weight: 1, color: 0x36d7f2 },
+  { name: 'Good', maxMs: 90, points: 200, weight: 0.8, color: 0x12fa05 },
+  { name: 'Bad', maxMs: 135, points: 100, weight: 0.5, color: 0xffd23f },
+  { name: 'Shit', maxMs: WINDOW_MS, points: 50, weight: 0.25, color: 0xa79fae },
+] as const;
+const HOLD_BONUS = 250;
+
 const LANE_X = [760, 880, 1000, 1120];
 const HIT_Y = 600;
 const PX_PER_MS_BASE = 0.45;
 const LANE_COLORS = [0xc24b99, 0x00ffff, 0x12fa05, 0xf9393f];
 
+type Rating = (typeof RATINGS)[number]['name'] | 'Fallo';
+
 interface Lane {
   note: ChartNote;
-  gfx: Graphics;
-  judged: boolean;
+  lane: number;
+  head: Graphics;
+  tail: Graphics;
+  judged: boolean; // head was hit or missed
+  holding: boolean;
+  done: boolean; // nothing more to draw or judge
+}
+
+export interface Stats {
+  score: number;
+  accuracy: number; // 0-100
+  maxCombo: number;
+  counts: Record<Rating, number>;
 }
 
 export class Gameplay extends Container {
@@ -27,9 +48,12 @@ export class Gameplay extends Container {
   private judgeText: Text;
   private score = 0;
   private combo = 0;
-  private misses = 0;
+  private maxCombo = 0;
+  private weightSum = 0;
+  private counts: Record<Rating, number> = { Sick: 0, Good: 0, Bad: 0, Shit: 0, Fallo: 0 };
   private running = false;
   private onNote: (lane: number) => void;
+  private totalNotes: number;
 
   constructor(
     ctx: AudioContext,
@@ -46,8 +70,9 @@ export class Gameplay extends Container {
     this.onNote = onNote;
     this.clock = new SongClock(ctx);
     this.pxPerMs = PX_PER_MS_BASE * speed;
+    this.totalNotes = notes.length;
 
-    // One receptor per lane, so the player sees where to hit.
+    // Receptors show where to press.
     for (let lane = 0; lane < 4; lane++) {
       const receptor = new Graphics().circle(0, 0, 40).stroke({ width: 6, color: LANE_COLORS[lane] });
       receptor.position.set(LANE_X[lane], HIT_Y);
@@ -55,10 +80,12 @@ export class Gameplay extends Container {
     }
 
     this.lanes = notes.map((note) => {
-      const gfx = new Graphics().circle(0, 0, 36).fill(LANE_COLORS[playerLane(note)]);
-      gfx.position.set(LANE_X[playerLane(note)], HIT_Y);
-      this.addChild(gfx);
-      return { note, gfx, judged: false };
+      const lane = playerLane(note);
+      const tail = new Graphics();
+      const head = new Graphics().circle(0, 0, 36).fill(LANE_COLORS[lane]);
+      head.position.set(LANE_X[lane], HIT_Y);
+      this.addChild(tail, head);
+      return { note, lane, head, tail, judged: false, holding: false, done: false };
     });
 
     this.scoreText = new Text({ text: '', style: { fill: 0xffffff, fontSize: 24, fontFamily: 'sans-serif' } });
@@ -84,64 +111,7 @@ export class Gameplay extends Container {
     this.running = true;
   }
 
-  /** Current song position in ms. */
-  get positionMs(): number {
-    return this.clock.positionMs();
-  }
-
-  /** Handles a press on a player lane (0-3). */
-  press(lane: number): void {
-    if (!this.running) return;
-    const pos = this.positionMs;
-
-    // Pick the closest unjudged note in this lane within the window.
-    let best: Lane | null = null;
-    for (const entry of this.lanes) {
-      if (entry.judged || playerLane(entry.note) !== lane) continue;
-      const diff = Math.abs(entry.note.t - pos);
-      if (diff > HIT_WINDOW_MS) continue;
-      if (!best || diff < Math.abs(best.note.t - pos)) best = entry;
-    }
-    if (!best) return;
-
-    best.judged = true;
-    best.gfx.visible = false;
-    this.combo++;
-    this.score += 350;
-    this.judgeText.text = 'Bien';
-    this.onNote(lane);
-  }
-
-  update(): void {
-    if (!this.running) return;
-    const pos = this.positionMs;
-
-    for (const entry of this.lanes) {
-      if (entry.judged) continue;
-
-      // Missed: passed the hit window without a press.
-      if (entry.note.t < pos - HIT_WINDOW_MS) {
-        entry.judged = true;
-        entry.gfx.visible = false;
-        this.misses++;
-        this.combo = 0;
-        this.judgeText.text = 'Fallo';
-        continue;
-      }
-
-      // Scroll toward the hit line.
-      const y = HIT_Y - (entry.note.t - pos) * this.pxPerMs;
-      entry.gfx.y = y;
-      entry.gfx.visible = y > -60 && y < 800;
-    }
-
-    this.scoreText.text = `Score: ${this.score}  Combo: ${this.combo}  Fallos: ${this.misses}`;
-  }
-
-  get finished(): boolean {
-    return this.running && this.lanes.every((l) => l.judged);
-  }
-
+  /** Stops the audio and freezes the chart. */
   stopSong(): void {
     for (const s of this.sources) {
       try {
@@ -150,6 +120,153 @@ export class Gameplay extends Container {
         // Already stopped.
       }
     }
+    this.sources = [];
     this.running = false;
+  }
+
+  get positionMs(): number {
+    return this.clock.positionMs();
+  }
+
+  /** True when every note has been hit, missed or finished. */
+  get finished(): boolean {
+    return this.running && this.lanes.every((l) => l.done);
+  }
+
+  get stats(): Stats {
+    return {
+      score: this.score,
+      accuracy: this.totalNotes ? (this.weightSum / this.totalNotes) * 100 : 0,
+      maxCombo: this.maxCombo,
+      counts: { ...this.counts },
+    };
+  }
+
+  /** Handles a press on a player lane (0-3). */
+  press(lane: number): void {
+    if (!this.running) return;
+    const pos = this.positionMs;
+
+    // Closest unjudged note in this lane inside the window.
+    let best: Lane | null = null;
+    for (const entry of this.lanes) {
+      if (entry.judged || entry.lane !== lane) continue;
+      const diff = Math.abs(entry.note.t - pos);
+      if (diff > WINDOW_MS) continue;
+      if (!best || diff < Math.abs(best.note.t - pos)) best = entry;
+    }
+    if (!best) return;
+
+    const diff = Math.abs(best.note.t - pos);
+    const rating = RATINGS.find((r) => diff <= r.maxMs) ?? RATINGS[RATINGS.length - 1];
+    best.judged = true;
+    this.addScore(rating.points, rating.weight, rating.name);
+
+    if (best.note.l && best.note.l > 0) {
+      best.holding = true; // finished on release or when the tail ends
+    } else {
+      best.done = true;
+      best.head.visible = false;
+    }
+    this.onNote(lane);
+  }
+
+  /** Handles a release on a lane (0-3); breaks holds released too early. */
+  release(lane: number): void {
+    if (!this.running) return;
+    const pos = this.positionMs;
+    for (const entry of this.lanes) {
+      if (!entry.holding || entry.lane !== lane) continue;
+      entry.holding = false;
+      const tailEnd = entry.note.t + (entry.note.l ?? 0);
+      if (pos >= tailEnd - WINDOW_MS) {
+        this.completeHold(entry);
+      } else {
+        this.breakHold(entry);
+      }
+    }
+  }
+
+  update(): void {
+    if (!this.running) return;
+    const pos = this.positionMs;
+
+    for (const entry of this.lanes) {
+      if (entry.done) continue;
+      const { note } = entry;
+      const tailEnd = note.t + (note.l ?? 0);
+
+      if (!entry.judged && note.t < pos - WINDOW_MS) {
+        // Missed: passed the window without a press.
+        entry.judged = true;
+        entry.done = true;
+        entry.head.visible = false;
+        entry.tail.visible = false;
+        this.breakCombo('Fallo');
+        continue;
+      }
+
+      if (entry.holding && pos >= tailEnd) {
+        entry.holding = false;
+        this.completeHold(entry);
+        continue;
+      }
+
+      const x = LANE_X[entry.lane];
+      const headY = entry.holding ? HIT_Y : HIT_Y - (note.t - pos) * this.pxPerMs;
+      entry.head.y = headY;
+      entry.head.visible = headY > -60 && headY < 800;
+
+      // Sustain: from the head up to the tail end (clamped to the hit line while held).
+      entry.tail.clear();
+      if (note.l && note.l > 0) {
+        const tailY = HIT_Y - (tailEnd - pos) * this.pxPerMs;
+        const top = Math.min(tailY, headY);
+        const bottom = entry.holding ? HIT_Y : headY;
+        if (bottom - top > 0) {
+          entry.tail.rect(x - 12, top, 24, bottom - top).fill({ color: LANE_COLORS[entry.lane], alpha: 0.6 });
+        }
+        entry.tail.visible = true;
+      }
+    }
+
+    this.scoreText.text = `Score: ${this.score}  Combo: ${this.combo}  Fallos: ${this.counts.Fallo}`;
+  }
+
+  private completeHold(entry: Lane): void {
+    entry.done = true;
+    entry.head.visible = false;
+    entry.tail.visible = false;
+    this.score += HOLD_BONUS;
+    this.judgeText.text = 'Sostenida';
+    this.judgeText.style.fill = 0x36d7f2;
+  }
+
+  private breakHold(entry: Lane): void {
+    entry.done = true;
+    entry.head.visible = false;
+    entry.tail.visible = false;
+    this.breakCombo('Fallo');
+  }
+
+  private addScore(points: number, weight: number, rating: Rating): void {
+    this.score += points;
+    this.weightSum += weight;
+    this.combo++;
+    this.maxCombo = Math.max(this.maxCombo, this.combo);
+    this.counts[rating]++;
+    this.showJudge(rating);
+  }
+
+  private breakCombo(rating: Rating): void {
+    this.combo = 0;
+    this.counts[rating]++;
+    this.showJudge(rating);
+  }
+
+  private showJudge(rating: Rating): void {
+    const color = rating === 'Fallo' ? 0xf9393f : RATINGS.find((r) => r.name === rating)?.color ?? 0xffffff;
+    this.judgeText.text = rating;
+    this.judgeText.style.fill = color;
   }
 }
