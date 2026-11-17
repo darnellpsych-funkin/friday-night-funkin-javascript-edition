@@ -1,8 +1,10 @@
 import { Application, Container, Text } from 'pixi.js';
 import { Character } from './character';
-import { Gameplay } from './gameplay';
+import { Gameplay, type Stats } from './gameplay';
 import { Alphabet } from './alphabet';
 import { PauseMenu } from './pause';
+import { MainMenu } from './mainmenu';
+import { StoryMenu } from './story';
 import { loadAudio, loadChart } from './song';
 
 // Player lanes: 0 left, 1 down, 2 up, 3 right. Arrows always work; the
@@ -63,25 +65,27 @@ function laneFor(key: string, scheme: number): number | undefined {
 
 const SING_ANIMS = ['singLEFT', 'singDOWN', 'singUP', 'singRIGHT'];
 const SONG_PATH = '/songs/bopeebo';
+// Songs with audio and charts in this project, by difficulty.
+const AVAILABLE: Record<string, string[]> = { bopeebo: ['normal'] };
+const MENU_SOON = 'Esta sección llega en una fase siguiente';
+
+type Screen = 'menu' | 'story' | 'play';
 
 async function boot(): Promise<void> {
   const app = new Application();
-  await app.init({ width: 1280, height: 720, background: '#f2a43a', resizeTo: window });
+  await app.init({ width: 1280, height: 720, background: '#000000', resizeTo: window });
   document.body.appendChild(app.canvas);
-
-  const title = new Text({
-    text: "Friday Night Funkin' JavaScript Edition",
-    style: { fill: 0x000000, fontSize: 28, fontFamily: 'sans-serif' },
-  });
-  title.position.set(24, 24);
-  app.stage.addChild(title);
 
   const status = new Text({
     text: 'Cargando...',
-    style: { fill: 0x000000, fontSize: 22, fontFamily: 'sans-serif' },
+    style: { fill: 0xffffff, fontSize: 18, fontFamily: 'monospace', stroke: { color: 0, width: 3 } },
   });
-  status.position.set(24, 64);
+  status.anchor.set(1, 1);
   app.stage.addChild(status);
+  const placeStatus = (): void => {
+    status.position.set(app.screen.width - 12, app.screen.height - 12);
+  };
+  placeStatus();
 
   const bf = await Character.load('/characters/bf');
   bf.position.set(1000, 80);
@@ -99,37 +103,51 @@ async function boot(): Promise<void> {
     songName?: string;
     artist?: string;
   };
-  const songInfo = {
-    song: metadata.songName ?? 'Bopeebo',
-    artist: metadata.artist ?? '',
-    difficulty: 'Normal',
-  };
+
+  const mainMenu = await MainMenu.load(app.screen.width, app.screen.height);
+  const story = await StoryMenu.load();
+  story.fit(app.screen.width, app.screen.height);
+  app.stage.addChild(mainMenu, story);
 
   let scheme = loadScheme();
   let offset = loadOffset();
-  const schemeLabel = (): string =>
-    `Teclas: ${SCHEMES[scheme].name} (Tab para cambiar)`;
-  const offsetLabel = (): string => `Ajuste de audio: ${offset} ms ([ y ] para cambiar)`;
-  const updateStatus = (): void => {
-    status.text = `Bopeebo (normal): ${notes.length} notas · ${schemeLabel()} · ${offsetLabel()} · clic para empezar`;
-  };
-  updateStatus();
-
+  let screen: Screen = 'menu';
+  let playing = { song: 'bopeebo', difficulty: 'normal' };
   let gameplay: Gameplay | null = null;
   let results: Container | null = null;
   let resultsShown = false;
   let pauseMenu: PauseMenu | null = null;
 
-  const showResults = (g: Gameplay): void => {
-    const s = g.stats;
+  const schemeLabel = (): string => `Teclas: ${SCHEMES[scheme].name} (Tab)`;
+  const offsetLabel = (): string => `Ajuste de audio: ${offset} ms ([ y ])`;
+  const updateStatus = (text?: string): void => {
+    status.text = text ?? `${schemeLabel()} · ${offsetLabel()}`;
+    placeStatus();
+  };
+  updateStatus();
+
+  const show = (next: Screen): void => {
+    screen = next;
+    mainMenu.visible = next === 'menu';
+    story.visible = next === 'story';
+    bf.visible = next === 'play';
+  };
+  show('menu');
+
+  window.addEventListener('resize', () => {
+    story.fit(app.screen.width, app.screen.height);
+    placeStatus();
+  });
+
+  const showResults = (stats: Stats): void => {
     const box = new Container();
     const lines = [
       'Canción terminada',
-      `Score: ${s.score}`,
-      `Precisión: ${s.accuracy.toFixed(2)}%`,
-      `Combo máximo: ${s.maxCombo}`,
-      `Sick ${s.counts.Sick} · Good ${s.counts.Good} · Bad ${s.counts.Bad} · Shit ${s.counts.Shit} · Fallos ${s.counts.Fallo}`,
-      'Clic o Enter para reiniciar',
+      `Score: ${stats.score}`,
+      `Precisión: ${stats.accuracy.toFixed(2)}%`,
+      `Combo máximo: ${stats.maxCombo}`,
+      `Sick ${stats.counts.Sick} · Good ${stats.counts.Good} · Bad ${stats.counts.Bad} · Shit ${stats.counts.Shit} · Fallos ${stats.counts.Fallo}`,
+      'Clic o Enter para reiniciar · Esc para el menú',
     ];
     lines.forEach((text, i) => {
       const t = new Text({
@@ -143,9 +161,14 @@ async function boot(): Promise<void> {
     results = box;
   };
 
-  const start = async (): Promise<void> => {
+  const start = async (song: string, difficulty: string): Promise<void> => {
     if (gameplay) return;
+    if (!AVAILABLE[song]?.includes(difficulty)) {
+      story.showNotice(`${song} (${difficulty}) aún no está copiada al proyecto`);
+      return;
+    }
     await audio.resume();
+    playing = { song, difficulty };
     gameplay = new Gameplay(
       audio,
       notes,
@@ -158,23 +181,9 @@ async function boot(): Promise<void> {
       offset,
     );
     app.stage.addChild(gameplay);
+    show('play');
     gameplay.start();
-    status.text = `Reproduciendo · ${schemeLabel()} · ${offsetLabel()}`;
-  };
-
-  const restart = (): void => {
-    if (!gameplay) return;
-    gameplay.stopSong();
-    app.stage.removeChild(gameplay);
-    gameplay.destroy({ children: true });
-    gameplay = null;
-    resultsShown = false;
-    if (results) {
-      app.stage.removeChild(results);
-      results.destroy({ children: true });
-      results = null;
-    }
-    void start();
+    updateStatus(`Reproduciendo · ${schemeLabel()} · ${offsetLabel()}`);
   };
 
   const removePauseMenu = (): void => {
@@ -187,7 +196,11 @@ async function boot(): Promise<void> {
   const openPause = (): void => {
     if (!gameplay || gameplay.finished || gameplay.isPaused) return;
     gameplay.pause();
-    pauseMenu = new PauseMenu(app.screen.width, app.screen.height, alphabet, songInfo);
+    pauseMenu = new PauseMenu(app.screen.width, app.screen.height, alphabet, {
+      song: metadata.songName ?? 'Bopeebo',
+      artist: metadata.artist ?? '',
+      difficulty: 'Normal',
+    });
     app.stage.addChild(pauseMenu);
   };
 
@@ -196,7 +209,7 @@ async function boot(): Promise<void> {
     removePauseMenu();
   };
 
-  const exitToTitle = (): void => {
+  const clearGameplay = (): void => {
     if (!gameplay) return;
     gameplay.stopSong();
     app.stage.removeChild(gameplay);
@@ -208,6 +221,17 @@ async function boot(): Promise<void> {
       results.destroy({ children: true });
       results = null;
     }
+  };
+
+  const restart = (): void => {
+    if (!gameplay) return;
+    clearGameplay();
+    void start(playing.song, playing.difficulty);
+  };
+
+  const exitToMenu = (): void => {
+    clearGameplay();
+    show('menu');
     updateStatus();
   };
 
@@ -222,23 +246,34 @@ async function boot(): Promise<void> {
       restart();
     } else {
       removePauseMenu();
-      exitToTitle();
+      exitToMenu();
     }
   };
 
-  const onPrimary = (): void => {
-    if (gameplay?.finished) restart();
-    else void start();
+  // Main menu choice: only Story Mode works for now.
+  const chooseMenu = (): void => {
+    if (mainMenu.choice === 'story') {
+      show('story');
+      updateStatus();
+    } else {
+      updateStatus(MENU_SOON);
+    }
+  };
+
+  // Story mode: start the first song of the selected week.
+  const playStory = (): void => {
+    void start(story.firstSong, story.difficulty);
   };
 
   window.addEventListener('pointerdown', () => {
     if (pauseMenu) activatePause();
-    else onPrimary();
+    else if (gameplay?.finished) restart();
+    else if (screen === 'menu') chooseMenu();
   });
 
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Tab') {
-      // Cycle schemes only before the song starts, so the keys don't change mid-song.
+      // Cycle schemes only outside a song, so the keys don't change mid-song.
       e.preventDefault();
       if (!gameplay) {
         scheme = (scheme + 1) % SCHEMES.length;
@@ -248,6 +283,7 @@ async function boot(): Promise<void> {
       return;
     }
     if (e.repeat) return;
+
     if (gameplay?.isPaused) {
       if (e.key === 'ArrowUp') pauseMenu?.move(-1);
       else if (e.key === 'ArrowDown') pauseMenu?.move(1);
@@ -255,29 +291,44 @@ async function boot(): Promise<void> {
       else if (e.key === 'Escape') closePause();
       return;
     }
+
     if (gameplay && !gameplay.finished && (e.key === 'Enter' || e.key === 'Escape')) {
       openPause();
       return;
     }
-    if (!gameplay && (e.key === '[' || e.key === ']')) {
-      // Audio offset, adjusted only before the song starts.
-      const delta = e.key === ']' ? OFFSET_STEP : -OFFSET_STEP;
-      offset = Math.max(-OFFSET_LIMIT, Math.min(OFFSET_LIMIT, offset + delta));
-      saveOffset(offset);
-      updateStatus();
+
+    if (!gameplay) {
+      if (e.key === '[' || e.key === ']') {
+        const delta = e.key === ']' ? OFFSET_STEP : -OFFSET_STEP;
+        offset = Math.max(-OFFSET_LIMIT, Math.min(OFFSET_LIMIT, offset + delta));
+        saveOffset(offset);
+        updateStatus();
+        return;
+      }
+      if (screen === 'menu') {
+        if (e.key === 'ArrowUp') mainMenu.move(-1);
+        else if (e.key === 'ArrowDown') mainMenu.move(1);
+        else if (e.key === 'Enter') chooseMenu();
+      } else if (screen === 'story') {
+        if (e.key === 'ArrowUp') story.moveWeek(-1);
+        else if (e.key === 'ArrowDown') story.moveWeek(1);
+        else if (e.key === 'ArrowLeft') story.moveDifficulty(-1);
+        else if (e.key === 'ArrowRight') story.moveDifficulty(1);
+        else if (e.key === 'Enter') playStory();
+        else if (e.key === 'Escape') {
+          show('menu');
+          updateStatus();
+        }
+      }
       return;
     }
-    if (e.key === 'Enter' && gameplay?.finished) {
+
+    if (e.key === 'Enter' && gameplay.finished) {
       restart();
       return;
     }
     const lane = laneFor(e.key, scheme);
-    if (lane === undefined) return;
-    if (!gameplay) {
-      void start();
-      return;
-    }
-    gameplay.press(lane);
+    if (lane !== undefined) gameplay.press(lane);
   });
 
   window.addEventListener('keyup', (e) => {
@@ -291,11 +342,9 @@ async function boot(): Promise<void> {
     if (gameplay.finished && !resultsShown) {
       resultsShown = true;
       gameplay.stopSong();
-      status.text = 'Fin';
-      showResults(gameplay);
+      showResults(gameplay.stats);
     }
   });
-
 }
 
 boot().catch((err) => {
