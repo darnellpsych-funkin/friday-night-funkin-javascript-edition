@@ -1,63 +1,83 @@
 import { Application, Text } from 'pixi.js';
-import { SongClock } from './clock';
 import { Character } from './character';
+import { Gameplay } from './gameplay';
+import { loadAudio, loadChart } from './song';
 
-// Keys that trigger the sing animations for each lane.
-const KEYS: Record<string, string> = {
-  ArrowLeft: 'singLEFT',
-  ArrowDown: 'singDOWN',
-  ArrowUp: 'singUP',
-  ArrowRight: 'singRIGHT',
+// Arrow keys mapped to player lanes (0 left, 1 down, 2 up, 3 right).
+const KEY_TO_LANE: Record<string, number> = {
+  ArrowLeft: 0,
+  ArrowDown: 1,
+  ArrowUp: 2,
+  ArrowRight: 3,
 };
+
+const SING_ANIMS = ['singLEFT', 'singDOWN', 'singUP', 'singRIGHT'];
+const SONG_PATH = '/songs/bopeebo';
 
 async function boot(): Promise<void> {
   const app = new Application();
   await app.init({ width: 1280, height: 720, background: '#f2a43a', resizeTo: window });
   document.body.appendChild(app.canvas);
 
-  const label = new Text({
+  const title = new Text({
     text: "Friday Night Funkin' JavaScript Edition",
     style: { fill: 0x000000, fontSize: 28, fontFamily: 'sans-serif' },
   });
-  label.x = 24;
-  label.y = 24;
-  app.stage.addChild(label);
+  title.position.set(24, 24);
+  app.stage.addChild(title);
+
+  const status = new Text({
+    text: 'Cargando...',
+    style: { fill: 0x000000, fontSize: 22, fontFamily: 'sans-serif' },
+  });
+  status.position.set(24, 64);
+  app.stage.addChild(status);
 
   const bf = await Character.load('/characters/bf');
-  bf.position.set(app.screen.width * 0.7, app.screen.height * 0.45);
-  bf.scale.set(0.6);
+  bf.position.set(1000, 80);
+  bf.scale.set(0.5);
   app.stage.addChild(bf);
 
-  const hint = new Text({
-    text: 'Flechas: cantar · idle al terminar',
-    style: { fill: 0x000000, fontSize: 20, fontFamily: 'sans-serif' },
-  });
-  hint.x = 24;
-  hint.y = 64;
-  app.stage.addChild(hint);
-
-  // Browsers keep AudioContext suspended until a user gesture, so the clock
-  // starts on the first key press or click.
   const audio = new AudioContext();
-  const clock = new SongClock(audio);
-  let started = false;
-  const startClock = async (): Promise<void> => {
-    if (started) return;
-    started = true;
+  const [{ notes, speed }, inst, voices] = await Promise.all([
+    loadChart(`${SONG_PATH}/bopeebo-chart.json`, 'normal'),
+    loadAudio(audio, `${SONG_PATH}/Inst.ogg`),
+    loadAudio(audio, `${SONG_PATH}/Voices-bf.ogg`),
+  ]);
+
+  status.text = `Bopeebo (normal): ${notes.length} notas · haz clic para empezar`;
+
+  let gameplay: Gameplay | null = null;
+  const start = async (): Promise<void> => {
+    if (gameplay) return;
     await audio.resume();
-    clock.start();
+    gameplay = new Gameplay(audio, notes, speed, inst, voices, (lane) => {
+      bf.play(SING_ANIMS[lane]);
+    });
+    app.stage.addChild(gameplay);
+    gameplay.start();
+    status.text = 'Reproduciendo';
   };
 
-  window.addEventListener('pointerdown', () => void startClock());
+  window.addEventListener('pointerdown', () => void start());
+
   window.addEventListener('keydown', (e) => {
-    void startClock();
-    const anim = KEYS[e.key];
-    if (anim && !e.repeat) bf.play(anim);
+    if (e.repeat) return;
+    const lane = KEY_TO_LANE[e.key];
+    if (lane === undefined) return;
+    if (!gameplay) {
+      void start();
+      return;
+    }
+    gameplay.press(lane);
   });
 
   app.ticker.add(() => {
-    label.text = `FNF JS · ${clock.positionMs().toFixed(0)} ms · ${bf.animationName}`;
+    gameplay?.update();
   });
 }
 
-boot();
+boot().catch((err) => {
+  console.error(err);
+  document.body.textContent = `Error: ${String(err)}`;
+});

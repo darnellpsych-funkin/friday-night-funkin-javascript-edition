@@ -9,8 +9,9 @@ export class SongClock {
     this.offsetMs = offsetMs;
   }
 
-  start(): void {
-    this.startTime = this.ctx.currentTime;
+  /** Marks song time zero at `at` (AudioContext seconds). Defaults to now. */
+  start(at: number = this.ctx.currentTime): void {
+    this.startTime = at;
   }
 
   /** Current song position in milliseconds, including the user offset. */

@@ -2,7 +2,7 @@
 
 Reconstrucción de Friday Night Funkin' en TypeScript, con PixiJS para el render y Web Audio para el sonido. Usa los assets de [Bambi-Slice Engine](https://github.com/darnellpsych-funkin/bambi-slice-engine).
 
-Estado: prototipo temprano. Hoy carga a Boyfriend desde su atlas Sparrow y responde a las flechas con sus animaciones de canto. Las notas, los menús y la compatibilidad con mods están en progreso.
+Estado: prototipo temprano. Hoy carga a Boyfriend desde su atlas Sparrow y juega Bopeebo (normal): las notas caen contra el reloj del audio, se juzgan con las flechas y el personaje canta. Faltan notas largas, menús y compatibilidad con mods.
 
 ## Desarrollo
 
