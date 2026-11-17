@@ -104,7 +104,7 @@ async function boot(): Promise<void> {
     artist?: string;
   };
 
-  const mainMenu = await MainMenu.load(app.screen.width, app.screen.height);
+  const mainMenu = await MainMenu.load(app.screen.width, app.screen.height, alphabet);
   const story = await StoryMenu.load();
   story.fit(app.screen.width, app.screen.height);
   app.stage.addChild(mainMenu, story);
