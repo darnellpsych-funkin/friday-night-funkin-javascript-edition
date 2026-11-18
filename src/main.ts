@@ -6,6 +6,8 @@ import { PauseMenu } from './pause';
 import { MainMenu } from './mainmenu';
 import { StoryMenu } from './story';
 import { loadAudio, loadChart } from './song';
+import { AnimateAtlas, AnimateCharacter } from './animate';
+import { loadJudge } from './judge';
 
 // Player lanes: 0 left, 1 down, 2 up, 3 right. Arrows always work; the
 // extra keys for each scheme are added on top. Letters are lowercased.
@@ -63,6 +65,8 @@ function laneFor(key: string, scheme: number): number | undefined {
   return extra >= 0 ? extra : undefined;
 }
 
+// Dad's sing labels in the Animate atlas, indexed by lane (left, down, up, right).
+const DAD_LABELS = ['Left', 'Down', 'Up', 'Right'];
 const SING_ANIMS = ['singLEFT', 'singDOWN', 'singUP', 'singRIGHT'];
 const SONG_PATH = '/songs/bopeebo';
 // Songs with audio and charts in this project, by difficulty.
@@ -72,6 +76,7 @@ const MENU_SOON = 'Esta sección llega en una fase siguiente';
 type Screen = 'menu' | 'story' | 'play';
 
 async function boot(): Promise<void> {
+  await loadJudge(); // carga el juicio en Rust (WASM) si existe; si no, usa TypeScript
   const app = new Application();
   await app.init({ width: 1280, height: 720, background: '#000000', resizeTo: window });
   document.body.appendChild(app.canvas);
@@ -92,8 +97,21 @@ async function boot(): Promise<void> {
   bf.scale.set(0.5);
   app.stage.addChild(bf);
 
+  // Opponent (Dad) and Girlfriend use Adobe Animate atlases.
+  const [dadAtlas, gfAtlas] = await Promise.all([
+    AnimateAtlas.load('gameplay/characters/dad/daddy-dearest'),
+    AnimateAtlas.load('gameplay/characters/gf/girlfriend'),
+  ]);
+  const gf = new AnimateCharacter(gfAtlas, 'Idle');
+  gf.position.set(560, 300);
+  gf.scale.set(0.45);
+  const dad = new AnimateCharacter(dadAtlas, 'Idle');
+  dad.position.set(110, 400);
+  dad.scale.set(0.45);
+  app.stage.addChild(gf, dad);
+
   const audio = new AudioContext();
-  const [{ notes, speed }, inst, voices] = await Promise.all([
+  const [{ notes, opponent, speed }, inst, voices] = await Promise.all([
     loadChart(`${SONG_PATH}/bopeebo-chart.json`, 'normal'),
     loadAudio(audio, `${SONG_PATH}/Inst.ogg`),
     loadAudio(audio, `${SONG_PATH}/Voices-bf.ogg`),
@@ -131,6 +149,8 @@ async function boot(): Promise<void> {
     mainMenu.visible = next === 'menu';
     story.visible = next === 'story';
     bf.visible = next === 'play';
+    dad.visible = next === 'play';
+    gf.visible = next === 'play';
   };
   show('menu');
 
@@ -179,6 +199,8 @@ async function boot(): Promise<void> {
         bf.play(SING_ANIMS[lane]);
       },
       offset,
+      opponent,
+      (lane) => dad.play(DAD_LABELS[lane]),
     );
     app.stage.addChild(gameplay);
     show('play');
@@ -337,6 +359,10 @@ async function boot(): Promise<void> {
   });
 
   app.ticker.add(() => {
+    if (screen === 'play') {
+      dad.update(app.ticker.deltaMS);
+      gf.update(app.ticker.deltaMS);
+    }
     if (!gameplay || gameplay.isPaused) return;
     gameplay.update();
     if (gameplay.finished && !resultsShown) {

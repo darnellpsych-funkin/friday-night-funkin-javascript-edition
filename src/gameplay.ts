@@ -1,6 +1,7 @@
 import { Container, Graphics, Text } from 'pixi.js';
 import { SongClock } from './clock';
-import { playerLane, type ChartNote } from './song';
+import { judgeIndex } from './judge';
+import { opponentLane, playerLane, type ChartNote } from './song';
 
 // Judgement windows in ms (the widest one is the hit window).
 const WINDOW_MS = 166;
@@ -56,6 +57,9 @@ export class Gameplay extends Container {
   private pausedElapsed = 0;
   private pausedPosition = 0;
   private onNote: (lane: number) => void;
+  private opponent: ChartNote[];
+  private onOpponent: (lane: number) => void;
+  private opponentIndex = 0;
   private totalNotes: number;
 
   constructor(
@@ -66,12 +70,16 @@ export class Gameplay extends Container {
     voices: AudioBuffer,
     onNote: (lane: number) => void,
     offsetMs = 0,
+    opponent: ChartNote[] = [],
+    onOpponent: (lane: number) => void = () => {},
   ) {
     super();
     this.ctx = ctx;
     this.inst = inst;
     this.voices = voices;
     this.onNote = onNote;
+    this.opponent = opponent;
+    this.onOpponent = onOpponent;
     this.clock = new SongClock(ctx, offsetMs);
     this.pxPerMs = PX_PER_MS_BASE * speed;
     this.totalNotes = notes.length;
@@ -195,7 +203,7 @@ export class Gameplay extends Container {
     if (!best) return;
 
     const diff = Math.abs(best.note.t - pos);
-    const rating = RATINGS.find((r) => diff <= r.maxMs) ?? RATINGS[RATINGS.length - 1];
+    const rating = RATINGS[judgeIndex(diff)] ?? RATINGS[RATINGS.length - 1];
     best.judged = true;
     this.addScore(rating.points, rating.weight, rating.name);
 
@@ -227,6 +235,13 @@ export class Gameplay extends Container {
   update(): void {
     if (!this.running || this.paused) return;
     const pos = this.positionMs;
+
+    // The opponent is played automatically: sing when its note time arrives.
+    while (this.opponentIndex < this.opponent.length && this.opponent[this.opponentIndex].t <= pos) {
+      const lane = opponentLane(this.opponent[this.opponentIndex]);
+      this.opponentIndex++;
+      if (lane >= 0) this.onOpponent(lane);
+    }
 
     for (const entry of this.lanes) {
       if (entry.done) continue;

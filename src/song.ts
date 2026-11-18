@@ -17,7 +17,15 @@ export function playerLane(note: ChartNote): number {
   return note.d >= 4 ? note.d - 4 : -1;
 }
 
-export async function loadChart(path: string, difficulty: string): Promise<{ notes: ChartNote[]; speed: number }> {
+/** Opponent lane (0-3) for a note, or -1 for player notes. */
+export function opponentLane(note: ChartNote): number {
+  return note.d < 4 ? note.d : -1;
+}
+
+export async function loadChart(
+  path: string,
+  difficulty: string,
+): Promise<{ notes: ChartNote[]; opponent: ChartNote[]; speed: number }> {
   const response = await fetch(path);
   if (!response.ok) throw new Error(`Chart not found: ${path} (${response.status})`);
   const chart = (await response.json()) as Chart;
@@ -26,10 +34,12 @@ export async function loadChart(path: string, difficulty: string): Promise<{ not
   if (!notes) throw new Error(`Difficulty "${difficulty}" missing in ${path}`);
 
   const speed = chart.scrollSpeed[difficulty] ?? 1;
-  const player = notes
-    .filter((n) => playerLane(n) >= 0)
-    .sort((a, b) => a.t - b.t);
-  return { notes: player, speed };
+  const sorted = [...notes].sort((a, b) => a.t - b.t);
+  return {
+    notes: sorted.filter((n) => playerLane(n) >= 0),
+    opponent: sorted.filter((n) => opponentLane(n) >= 0),
+    speed,
+  };
 }
 
 export async function loadAudio(ctx: AudioContext, path: string): Promise<AudioBuffer> {
